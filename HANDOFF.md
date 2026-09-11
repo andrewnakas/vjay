@@ -33,6 +33,25 @@ exists to explain.
 Nothing is code-signed; there are no certificates behind this. macOS calls that
 "damaged" (`xattr -cr`) and Windows shows SmartScreen. The README says so.
 
+Two packaging traps, both hit on the first release:
+
+- **electron-builder will not build a `.deb` without a maintainer email.** The
+  Linux job failed while macOS and Windows sailed through. It is set in
+  `build.linux.maintainer`, deliberately as a GitHub noreply address rather than
+  a personal one in a public file.
+- **Both Windows targets are `.exe`**, so a single `artifactName` template made
+  the installer and the portable build collide on one filename in `dist/` and
+  one silently overwrote the other. `nsis` and `portable` now carry their own
+  names. Any two targets sharing an extension need this.
+
+To check a packaged Linux build on a machine without FUSE — which Ubuntu 22.04+
+is, since it dropped `libfuse2` — use `--appimage-extract` and run
+`squashfs-root/vjay --no-sandbox`. Not `squashfs-root/AppRun`, which needs
+`$APPDIR` set, and `--no-sandbox` because extracting as a normal user strips the
+setuid bit from `chrome-sandbox`. A renderer child process appearing is the
+evidence a window was actually created; the app also answers on its own loopback
+port, which is the quickest proof the packaged asar is intact.
+
 **Not in the repo, by the user's decision:** `media/photos/` and
 `shows/*.json` — the album and the setlist from the original show are personal.
 `.gitignore` keeps them out and the app treats both as optional.
