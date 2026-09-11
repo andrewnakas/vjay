@@ -1,0 +1,221 @@
+<!doctype html><meta charset=utf-8>
+<title>VJay browser check</title>
+<!--
+  The other safety net. `selftest.html` runs the engine against fixtures;
+  this boots the REAL app in an iframe and drives it the way a hand does -
+  clicks, pointer drags, key presses - because every bug that reached the
+  first show was invisible to a green fixture suite and obvious the moment
+  the app was actually driven: a promise that never settled at boot, an
+  overlay 105px away from the canvas it was measuring against.
+
+  Keep the iframe small: it renders under SwiftShader in headless, and the
+  virtual-time budget is spent on frames.
+
+    ./serve.sh &
+    chrome --headless=new --disable-gpu --use-gl=angle \
+      --use-angle=swiftshader --enable-unsafe-swiftshader \
+      --autoplay-policy=no-user-gesture-required \
+      --window-size=960,1100 --virtual-time-budget=6000 \
+      --dump-dom http://127.0.0.1:8080/browsercheck.html
+
+  Require the RESULT: line, same as the self-test.
+-->
+<style>body{margin:0;background:#07080c;color:#e6eaf3;font:12px ui-monospace,monospace}
+#out{padding:8px;white-space:pre-wrap}iframe{width:900px;height:520px;border:0;display:block}</style>
+<div id="out">running…</div>
+<iframe id="f" src="index.html?test=1"></iframe>
+<script type="module">
+const lines = []; let bad = 0;
+const ck = (n, ok, d='') => { if(!ok) bad++; lines.push(`${ok?'PASS':'FAIL'}  ${n}${d?'  — '+d:''}`); paint(); };
+const paint = () => { document.getElementById('out').textContent = lines.join('\n'); };
+const f = document.getElementById('f');
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let pump = () => {};
+
+const errs = [];
+window.addEventListener('error', e => errs.push(String(e.message)));
+
+f.addEventListener('load', async () => {
+  const w = f.contentWindow, d = f.contentDocument;
+  w.addEventListener('error', e => errs.push('app: ' + e.message));
+  for (let i = 0; i < 60 && !w.vjay; i++) await sleep(50);
+  ck('the app boots and exposes vjay', !!w.vjay, errs.join(' | '));
+  if (!w.vjay) { lines.push('RESULT: FAIL'); paint(); return; }
+  const app = w.vjay;
+  // Drive real frames rather than waiting for one. Headless Chrome under a
+  // virtual-time budget does not promise a rAF tick after a state change, so a
+  // pixel check that slept and hoped was testing the scheduler, not the app.
+  // `frame()` is the exact entry the rAF loop uses, so the dispatch that runs
+  // here is the real one.
+  pump = (n = 3) => { for (let i = 0; i < n; i++) app.frame(1 / 60, performance.now() + i * 16.7); };
+  await sleep(200);
+
+  // --- 4. Inputs at the top -------------------------------------------------
+  const secs = [...d.querySelectorAll('aside.left > .pgroup')]
+    .map(s => s.querySelector('h3')?.textContent);
+  ck('Inputs is the first section in the left column', secs[0] === 'Inputs', secs.join(' › '));
+  ck('the screen and camera controls live in it',
+    !!d.querySelector('aside.left > .pgroup .cameralist') &&
+    d.getElementById('btnScreen')?.closest('.pgroup')?.querySelector('h3')?.textContent === 'Inputs');
+
+  // Collapse by clicking the heading (the static sections never had a handler).
+  const looks = [...d.querySelectorAll('aside.left > .pgroup')]
+    .find(s => s.querySelector('h3')?.textContent === 'Looks');
+  looks.querySelector('.pgroup-head').click();
+  ck('clicking a static section heading folds it', looks.classList.contains('collapsed'));
+  looks.querySelector('.pgroup-head').click();
+
+  // --- 2. corners without arming a mode ------------------------------------
+  app.ui.switchTab('map');
+  app.mapping.addFrame?.();
+  await sleep(150);
+  ck('corners are live with the Setup tab open and no key pressed',
+    app.mapEditor.cornersLive && !app.mapEditor.enabled,
+    `cornersLive=${app.mapEditor.cornersLive} enabled=${app.mapEditor.enabled}`);
+  ck('the overlay accepts the pointer',
+    !d.querySelector('.stage-wrap').classList.contains('noedit'));
+
+  await sleep(200);
+  const ov = d.getElementById('editOverlay');
+  const octx = ov.getContext('2d');
+  // Count lit pixels in a small box around one CORNER, not over the whole
+  // overlay. A total is far too forgiving: with the handles silently missing
+  // the quad outlines alone still lit hundreds of pixels and a total-based
+  // check sailed through. A handle is a filled box AT the corner, so look
+  // there.
+  const R0 = ov.getBoundingClientRect();
+  const litAt = (p) => {
+    const cx = Math.round((p[0]) * ov.width);
+    const cy = Math.round((1 - p[1]) * ov.height);
+    const half = Math.round(9 * (ov.width / R0.width));
+    const x0 = Math.max(0, cx - half), y0 = Math.max(0, cy - half);
+    const w = Math.min(ov.width - x0, half * 2), h = Math.min(ov.height - y0, half * 2);
+    if (w <= 0 || h <= 0) return 0;
+    const px = octx.getImageData(x0, y0, w, h).data;
+    let n = 0; for (let i = 3; i < px.length; i += 4) if (px[i] > 8) n++;
+    return n / (w * h);
+  };
+  const sel0 = app.mapping.selected;
+  const corner0 = app.mapping.corners(sel0)[0];
+  pump();
+  const fill = litAt(corner0);
+  {
+    const all = octx.getImageData(0, 0, ov.width, ov.height).data;
+    let n = 0; for (let i = 3; i < all.length; i += 4) if (all[i] > 8) n++;
+    lines.push(`      overlay ${ov.width}x${ov.height} css ${R0.width.toFixed(0)}x${R0.height.toFixed(0)}`
+      + ` · plane ${sel0} corner0 ${corner0[0].toFixed(3)},${corner0[1].toFixed(3)}`
+      + ` · dpr=${app.mapEditor.dpr} · total lit ${n}`
+      + ` · locked=${app.mapping.isLocked(sel0)}`
+      + ` · frameErrors=${app._frameErrors || 0} ${app.lastFrameError?.message || ''}`
+      + ` || tool=${app.mapEditor.tool} enabled=${app.mapEditor.enabled}`
+      + ` cornersLive=${app.mapEditor.cornersLive} view=${app.view.mode}`
+      + ` setupOpen=${app.mapEditor.setupOpen} editorOn=${app.editor.enabled}`
+      + ` dispatch=${/cornersLive/.test(app._frame.toString())}`);
+    const before = app.mapEditor.dpr;
+    app.mapEditor.draw(false);
+    lines.push(`      direct draw: dpr ${before} -> ${app.mapEditor.dpr}`
+      + ` · corner fill now ${(litAt(corner0) * 100).toFixed(0)}%`);
+  }
+  ck('a corner handle is drawn ON the corner, not just its outline',
+    fill > 0.35, `${(fill * 100).toFixed(0)}% of the box around corner 1 is lit`);
+
+  // Drag a corner by a known amount, with the grab deliberately off-centre.
+  const i0 = app.mapping.selected;
+  const before = app.mapping.corners(i0);
+  const R = ov.getBoundingClientRect();
+  const toClient = (p) => ({
+    x: R.left + p[0] * R.width, y: R.top + (1 - p[1]) * R.height,
+  });
+  const c0 = toClient(before[0]);
+  const send = (type, dx) => ov.dispatchEvent(new w.PointerEvent(type, {
+    clientX: c0.x + 9 + dx, clientY: c0.y, pointerId: 7, bubbles: true, cancelable: true,
+  }));
+  send('pointerdown', 0);
+  const onPress = app.mapping.corners(i0)[0];
+  ck('pressing 9px off a corner does not move it',
+    Math.abs(onPress[0] - before[0][0]) < 1e-9,
+    `${before[0][0].toFixed(4)} -> ${onPress[0].toFixed(4)}`);
+  send('pointermove', 30);
+  const after = app.mapping.corners(i0)[0];
+  send('pointerup', 30);
+  const want = before[0][0] + 30 / R.width;
+  ck('dragging then moves it by the drag', Math.abs(after[0] - want) < 3e-3,
+    `${after[0].toFixed(4)} want ${want.toFixed(4)}`);
+  app.mapping.setCorner(i0, 0, before[0][0], before[0][1]);
+
+  // --- 1. the picture tool --------------------------------------------------
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+  await sleep(200);
+  ck('D arms the Picture tool', app.mapEditor.pictureLive === true);
+
+  const target = app.mapping.activeSurfaces()[0];
+  app.mapping.selected = target;
+  const cs = app.mapping.corners(target);
+  const mid = [ (cs[0][0]+cs[1][0]+cs[2][0]+cs[3][0])/4, (cs[0][1]+cs[1][1]+cs[2][1]+cs[3][1])/4 ];
+  const m0 = toClient(mid);
+  const ns = `map.s${target + 1}`;
+  const panBefore = app.vjayParams ? 0 : null;
+  const pan0 = app.mapping.variation(target).pan[0];
+  const pdrag = (type, dx) => ov.dispatchEvent(new w.PointerEvent(type, {
+    clientX: m0.x + dx, clientY: m0.y, pointerId: 8, bubbles: true, cancelable: true,
+  }));
+  pdrag('pointerdown', 0);
+  pdrag('pointermove', 60);
+  const pan1 = app.mapping.variation(target).pan[0];
+  pdrag('pointerup', 60);
+  ck('dragging inside a plane moves its picture', Math.abs(pan1 - pan0) > 0.01,
+    `vPanX ${pan0.toFixed(4)} -> ${pan1.toFixed(4)}`);
+  const csAfter = app.mapping.corners(target);
+  ck('and leaves the plane where it was',
+    csAfter.every((p, k) => Math.abs(p[0] - cs[k][0]) < 1e-9 && Math.abs(p[1] - cs[k][1]) < 1e-9));
+
+  // Locked planes still pan; that is the whole point.
+  app.mapping.setLocked(target, true);
+  const panL0 = app.mapping.variation(target).pan[0];
+  pdrag('pointerdown', 60);
+  pdrag('pointermove', 0);
+  pdrag('pointerup', 0);
+  ck('a locked plane still lets its picture move',
+    Math.abs(app.mapping.variation(target).pan[0] - panL0) > 0.01);
+  app.mapping.setLocked(target, false);
+
+  // In a plane's own view too.
+  app.ui.viewUI.select(target);
+  await sleep(200);
+  ck('the Picture tool survives switching to the plane’s own view',
+    app.mapEditor.pictureLive && app.view.mode === 'plane');
+  const pv = app.planeView();
+  ck('the plane view reports its letterbox rect', !!pv && pv.rect[2] > 0.1);
+  const rc = pv.rect;
+  // Re-measure: the view bar grows a row of buttons when a plane is comped, so
+  // the overlay is not where it was. The app re-measures on every event; a test
+  // that cached the rect would be testing its own staleness.
+  const R2 = ov.getBoundingClientRect();
+  const pc = { x: R2.left + (rc[0] + rc[2] / 2) * R2.width, y: R2.top + (1 - rc[1] - rc[3] / 2) * R2.height };
+  lines.push(`      overlay rect ${R.top.toFixed(0)},${R.height.toFixed(0)} -> ${R2.top.toFixed(0)},${R2.height.toFixed(0)}`);
+  const vdrag = (type, dx) => ov.dispatchEvent(new w.PointerEvent(type, {
+    clientX: pc.x + dx, clientY: pc.y, pointerId: 9, bubbles: true, cancelable: true,
+  }));
+  const vp0 = app.mapping.variation(target).pan[0];
+  vdrag('pointerdown', 0); vdrag('pointermove', 50); vdrag('pointerup', 50);
+  ck('dragging in the plane’s own view moves the picture too',
+    Math.abs(app.mapping.variation(target).pan[0] - vp0) > 0.01,
+    `vPanX ${vp0.toFixed(4)} -> ${app.mapping.variation(target).pan[0].toFixed(4)}`);
+  ck('the plane preview shows the variation while that tool is up',
+    app.renderer.planePreviewVaried === true);
+
+  app.ui.viewUI.select(-1);
+  d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'd', bubbles: true }));
+  await sleep(150);
+  ck('D again puts it away', !app.mapEditor.pictureLive);
+
+  // The render loop catches its own exceptions so a bad frame cannot kill the
+  // set - which also means a broken frame is silent. Assert on the count.
+  ck('the render loop never threw', !app._frameErrors,
+    app.lastFrameError ? `${app._frameErrors}× ${app.lastFrameError.message}` : '');
+  ck('no uncaught errors during any of that', errs.length === 0, errs.join(' | '));
+  lines.push(`RESULT: ${bad ? 'FAIL (' + bad + ')' : 'PASS'}`);
+  paint();
+  document.title = bad ? 'CHECK FAIL' : 'CHECK PASS';
+});
+</script>

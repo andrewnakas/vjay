@@ -1,0 +1,21 @@
+# The album is personal. `tools/import-photos.py` builds this from any folder
+# of images, so anyone cloning this makes their own.
+media/photos/
+media/photos.json
+
+# Saved sets are personal too, and a set is a big file. `?load=shows/x.json`
+# picks one up on boot, and the Show tab exports them.
+shows/*.json
+
+# Local dev server log.
+.serve.log
+__pycache__/
+
+# Desktop build output.
+node_modules/
+dist/
+
+# Editor and assistant local config.
+.claude/
+.vscode/
+.idea/

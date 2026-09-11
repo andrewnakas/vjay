@@ -1,0 +1,72 @@
+{
+  "name": "vjay",
+  "productName": "VJay",
+  "version": "1.0.0",
+  "description": "Audio-reactive visual mixer and projection mapper",
+  "homepage": "https://github.com/andrewnakas/vjay",
+  "author": {
+    "name": "Andrew Nakas"
+  },
+  "license": "MIT",
+  "main": "desktop/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "^32.2.7",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.andrewnakas.vjay",
+    "productName": "VJay",
+    "artifactName": "VJay-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "index.html",
+      "js/**/*",
+      "css/**/*",
+      "icon.svg",
+      "desktop/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "identity": null,
+      "extendInfo": {
+        "NSCameraUsageDescription": "VJay uses a camera as a live video source.",
+        "NSMicrophoneUsageDescription": "VJay listens to audio to drive the visuals."
+      }
+    },
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "linux": {
+      "category": "AudioVideo",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] }
+      ]
+    }
+  }
+}

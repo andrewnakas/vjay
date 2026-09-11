@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <rect width="128" height="128" rx="26" fill="#0d1017"/>
+  <!-- two wall planes meeting at a corner, which is what the app is for -->
+  <path d="M20 34 L62 22 L62 104 L20 94 Z" fill="#5ee9b5" opacity="0.9"/>
+  <path d="M66 22 L108 34 L108 94 L66 104 Z" fill="#7aa2ff" opacity="0.9"/>
+  <line x1="64" y1="20" x2="64" y2="106" stroke="#07080c" stroke-width="5"/>
+  <!-- a framed picture on each wall -->
+  <rect x="30" y="46" width="22" height="28" fill="#0d1017" opacity="0.75"/>
+  <rect x="76" y="46" width="22" height="28" fill="#0d1017" opacity="0.75"/>
+</svg>

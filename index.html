@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VJay — audio-reactive visual mixer</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎛️</text></svg>">
+</head>
+<body>
+
+<div id="boot" class="boot">
+  <div class="boot-card">
+    <h1>VJay</h1>
+    <p>Webcam, screen capture and generated visuals, driven by what you are listening to.</p>
+    <div class="boot-actions">
+      <button id="bootStart" class="big primary">Start</button>
+      <button id="bootTest" class="big">Start with test audio</button>
+    </div>
+    <p class="boot-note">
+      Audio and video permissions are requested only when you pick a source.
+      Test audio runs a synthetic 124&nbsp;BPM loop so you can try everything without a mic.
+    </p>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+
+  <header class="topbar">
+    <div class="brand">VJ<span>ay</span></div>
+
+    <div class="topgroup">
+      <label class="mini">Audio in</label>
+      <select id="audioDevice" class="sel" title="Pick a mic, line-in, or a 'Monitor of…' device for system audio"></select>
+      <button id="audioStart" title="Start the selected input">Use input</button>
+      <button id="audioDisplay" title="Capture system / tab audio via screen share">System audio</button>
+      <button id="audioTest" title="Synthetic 124 BPM loop">Test tone</button>
+    </div>
+
+    <div class="topgroup">
+      <label class="mini">Gain</label>
+      <input id="audioGain" class="mini-slider" type="range" min="0" max="4" step="0.01" value="1">
+      <button id="audioMonitor" class="toggle" title="Route input to your speakers">Monitor</button>
+    </div>
+
+    <div class="topgroup">
+      <button id="tapBtn" title="Tap tempo (Space)">TAP</button>
+      <input id="bpmInput" class="num" type="number" min="40" max="240" step="0.1" value="120">
+      <button id="bpmLock" class="toggle" title="Lock BPM, ignore detection">Lock</button>
+      <button id="downbeat" title="Reset the downbeat (Enter)">⟲ 1</button>
+    </div>
+
+    <div class="topgroup right">
+      <span id="statusAudio" class="pill">no audio</span>
+      <span id="fps" class="pill">– fps</span>
+      <button id="btnPopout" title="Pop out the output window (O)">Output ⧉</button>
+      <button id="btnFull" title="Fullscreen (F)">Full ⤢</button>
+      <button id="btnRec" class="rec" title="Record to webm (R)">● REC</button>
+      <button id="btnHelp" title="Shortcuts">?</button>
+    </div>
+  </header>
+
+  <aside class="left">
+    <!-- Inputs first: which camera and which screen are the two things you set
+         before anything else, and the two you come back to when a feed dies. -->
+    <section class="pgroup">
+      <header class="pgroup-head"><span class="twisty">▾</span><h3>Inputs</h3></header>
+      <div class="pgroup-body">
+        <div class="srcbar">
+          <button id="btnScreen" title="Capture a screen, window or tab">Screen</button>
+          <button id="btnScreenStop" title="Stop the screen capture" hidden>■ Stop</button>
+          <button id="btnScreenRestart" title="Pick the capture surface again — the way back from a frozen feed" hidden>↻ Restart</button>
+          <button id="btnCamScan" title="Re-scan for cameras (labels need permission once)">⟳ Cameras</button>
+        </div>
+        <div id="inputStatus" class="inputstatus"></div>
+        <div id="cameraList" class="cameralist"></div>
+        <div id="cameraControls"></div>
+      </div>
+    </section>
+    <section class="pgroup">
+      <header class="pgroup-head"><span class="twisty">▾</span><h3>Looks</h3></header>
+      <div class="pgroup-body">
+        <p class="hint">One click sets a whole patch, replacing the layers. Cam looks show
+          whichever camera is in slot <strong>CAM</strong> — press ★ next to a camera in
+          Inputs to move it there.</p>
+        <div id="lookGrid" class="lookgrid"></div>
+      </div>
+    </section>
+    <section class="pgroup">
+      <header class="pgroup-head"><span class="twisty">▾</span><h3>Layers</h3></header>
+      <div class="pgroup-body">
+        <div id="layerList" class="layerlist"></div>
+        <div class="srcbar">
+          <select id="layerAddSource" class="sel"></select>
+          <button id="layerAdd" title="Add a layer with this source">+</button>
+          <button id="layerDup" title="Duplicate the selected layer">⧉</button>
+          <button id="layerDel" title="Delete the selected layer">✕</button>
+        </div>
+      </div>
+    </section>
+    <div id="layerInspector"></div>
+    <section class="pgroup">
+      <header class="pgroup-head"><span class="twisty">▾</span><h3>Sources</h3></header>
+      <div class="pgroup-body">
+        <div id="photoPanel"></div>
+        <p class="hint">Click a source to add it as a layer, or <strong>drag it onto the preview</strong> to place it where you drop it. Drop image, video or audio files anywhere.</p>
+        <div id="sourceGrid" class="srcgrid"></div>
+      </div>
+    </section>
+    <div id="mixPanel"></div>
+    <div id="masterPanel"></div>
+  </aside>
+
+  <main class="stage">
+    <div id="viewbar" class="viewbar"></div>
+    <div class="stage-wrap">
+      <canvas id="gl"></canvas>
+      <canvas id="editOverlay" class="edit-overlay"></canvas>
+      <div id="toast" class="toast"></div>
+    </div>
+    <div class="cuebar">
+      <button id="cuePrevSong" title="Previous song (Ctrl+PageUp)">⏮</button>
+      <button id="cuePrev" title="Previous cue (PageUp or ,)">◀</button>
+      <span id="cueReadout" class="cueread">No show loaded</span>
+      <button id="cueNext" class="primary" title="Next cue (PageDown or .)">▶</button>
+      <button id="cueNextSong" title="Next song (Ctrl+PageDown)">⏭</button>
+      <button id="cueUpdate" title="Overwrite the current cue with what is on screen">⟳ Update</button>
+      <span id="mapStatus" class="pill" title="Mapping status">map</span>
+    </div>
+    <div class="transport">
+      <button id="editToggle" class="toggle on" title="Show layer handles on the preview (H hides the UI)">✥ Edit</button>
+      <div class="fader">
+        <span class="mini">A</span>
+        <input id="crossfader" type="range" min="0" max="1" step="0.001" value="0.5">
+        <span class="mini">B</span>
+      </div>
+      <div class="presets" id="presetSlots"></div>
+      <div class="topgroup">
+        <label class="mini">Morph</label>
+        <input id="morphBeats" class="num" type="number" min="0" max="64" step="1" value="0" title="Beats to glide over when recalling a preset">
+        <button id="presetExport" title="Export presets to a file">⤓</button>
+        <button id="presetImport" title="Import presets from a file">⤒</button>
+        <input id="presetFile" type="file" accept="application/json" hidden>
+      </div>
+    </div>
+    <canvas id="meters" class="meters"></canvas>
+  </main>
+
+  <aside class="right">
+    <div class="tabs">
+      <button class="tab active" data-tab="fx" title="Master effect chain">FX</button>
+      <button class="tab" data-tab="mod" title="Modulation matrix and LFOs">Mod</button>
+      <button class="tab" data-tab="show" title="Setlist: songs and cues">Show</button>
+      <button class="tab" data-tab="map" title="Projector, planes, alignment">Setup</button>
+      <button class="tab" data-tab="auto" title="Autopilot">Auto</button>
+      <button class="tab" data-tab="sys" title="Render, MIDI and diagnostics">Sys</button>
+    </div>
+    <div class="tabpanes">
+      <div class="tabpane active" data-tab="fx"><div id="fxChain"></div></div>
+      <div class="tabpane" data-tab="mod">
+        <div class="modbar">
+          <button id="modAdd">+ Add modulation</button>
+          <button id="modClear">Clear all</button>
+        </div>
+        <div id="modRows" class="modrows"></div>
+        <div id="lfoPanels"></div>
+      </div>
+      <div class="tabpane" data-tab="show"><div id="showPanel"></div></div>
+      <div class="tabpane" data-tab="map"><div id="mapPanel"></div></div>
+      <div class="tabpane" data-tab="auto"><div id="autoPanel"></div><div id="autoLog" class="autolog"></div></div>
+      <div class="tabpane" data-tab="sys">
+        <section class="pgroup">
+          <header class="pgroup-head"><span class="twisty">▾</span><h3>Render</h3></header>
+          <div class="pgroup-body">
+            <div class="prow"><label class="plabel">Resolution</label>
+              <select id="resScale" class="pselect">
+                <option value="0.5">50%</option>
+                <option value="0.75">75%</option>
+                <option value="1" selected>100%</option>
+                <option value="1.5">150%</option>
+              </select>
+            </div>
+            <div class="prow"><label class="plabel">Output aspect</label>
+              <select id="outAspect" class="pselect" title="Lock the render to the projector's shape so a calibration stays valid">
+                <option value="0">Fill the window</option>
+                <option value="1.7778" selected>16:9</option>
+                <option value="1.6">16:10</option>
+                <option value="1.3333">4:3</option>
+                <option value="2.3704">2.37:1</option>
+              </select>
+            </div>
+            <div class="prow"><label class="plabel">FPS cap</label>
+              <select id="fpsCap" class="pselect">
+                <option value="0" selected>Uncapped</option>
+                <option value="60">60</option>
+                <option value="30">30</option>
+                <option value="24">24</option>
+              </select>
+            </div>
+            <div class="prow"><label class="plabel">Feedback</label>
+              <button id="clearFeedback" class="ptoggle">Clear</button></div>
+          </div>
+        </section>
+        <div id="flowPanel"></div>
+        <section class="pgroup">
+          <header class="pgroup-head"><span class="twisty">▾</span><h3>Lyrics</h3></header>
+          <div class="pgroup-body">
+            <div class="srcbar">
+              <button id="lyricToggle" class="ptoggle">● Listen</button>
+              <button id="lyricClear" class="ptoggle">Clear</button>
+            </div>
+            <p id="lyricStatus" class="hint">Off.</p>
+            <p id="lyricLine" class="diag"></p>
+            <div id="lyricParams"></div>
+            <p class="hint warn">Speech recognition sends microphone audio to Google
+              for transcription — it has no offline mode in a browser. It listens on its
+              own mic, not the mixer feed, and it will misread sung lyrics over a band.</p>
+          </div>
+        </section>
+        <section class="pgroup">
+          <header class="pgroup-head"><span class="twisty">▾</span><h3>MIDI</h3></header>
+          <div class="pgroup-body">
+            <div class="prow"><label class="plabel">Controller</label>
+              <button id="midiEnable" class="ptoggle">Enable</button></div>
+            <div id="midiStatus" class="hint">Right-click any control to learn a knob once MIDI is enabled.</div>
+            <div id="midiList" class="midilist"></div>
+            <div class="prow"><label class="plabel">Mappings</label>
+              <button id="midiClear" class="ptoggle">Clear all</button></div>
+          </div>
+        </section>
+        <section class="pgroup">
+          <header class="pgroup-head"><span class="twisty">▾</span><h3>Diagnostics</h3></header>
+          <div class="pgroup-body"><pre id="diag" class="diag"></pre></div>
+        </section>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="help" class="help hidden">
+  <div class="help-card">
+    <h2>Shortcuts</h2>
+    <table id="helpTable"></table>
+    <button id="helpClose" class="big">Close</button>
+  </div>
+</div>
+
+<div id="dropzone" class="dropzone hidden"><span>Drop images, video or audio</span></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
