@@ -4,6 +4,39 @@ Written 2026-09-05 for a fresh session picking this up cold. `README.md` covers
 how to *use* the app; this covers what a developer needs to know to *extend* it,
 and what is still missing for the show on **2026-09-06**.
 
+## Shipping
+
+Two GitHub Actions workflows, both in `.github/workflows/`:
+
+- **`pages.yml`** publishes the app to <https://andrewnakas.github.io/vjay/> on
+  every push to `main`. The app is static by design, so it uploads the repo as
+  it stands, minus `desktop/`, `build/`, `.github/` and `package.json`. Pages is
+  HTTPS, which is a secure context, so camera, screen share and WebMIDI all work
+  there exactly as they do on localhost.
+- **`release.yml`** builds the desktop app for macOS, Windows and Linux when a
+  `v*` tag is pushed, and attaches the installers to the matching release. It
+  creates the release as a **draft** first and only publishes it once all three
+  platforms have uploaded, so nobody downloads a half-populated release.
+
+**`desktop/main.js`** is the Electron shell. It serves the app to itself over
+`127.0.0.1` on an OS-assigned port rather than `file://` — ES modules are
+blocked by CORS on `file://`, and `getUserMedia` / `getDisplayMedia` / WebMIDI
+all need a secure context, which localhost is and `file://` is not. That also
+means the packaged app runs the same way `./serve.sh` does, which is worth more
+than saving a port. It grants media and MIDI permission for its own origin,
+routes `window.open('…','vjay-output')` to a real BrowserWindow, and answers
+`setDisplayMediaRequestHandler` with a whole screen — preferring the display the
+app is *not* on. Never a window: a window that goes behind another one stops
+being repainted and its capture freezes, which is the failure the Inputs panel
+exists to explain.
+
+Nothing is code-signed; there are no certificates behind this. macOS calls that
+"damaged" (`xattr -cr`) and Windows shows SmartScreen. The README says so.
+
+**Not in the repo, by the user's decision:** `media/photos/` and
+`shows/*.json` — the album and the setlist from the original show are personal.
+`.gitignore` keeps them out and the app treats both as optional.
+
 ## The job
 
 A live set, next day. The projection target is a **corner of a room** — two

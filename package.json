@@ -81,7 +81,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "perMachine": false
+      "perMachine": false,
+      "artifactName": "VJay-${version}-win-${arch}-setup.${ext}"
     },
     "linux": {
       "category": "AudioVideo",
@@ -100,6 +101,9 @@
         }
       ],
       "maintainer": "Andrew Nakas <7544678+andrewnakas@users.noreply.github.com>"
+    },
+    "portable": {
+      "artifactName": "VJay-${version}-win-${arch}-portable.${ext}"
     }
   }
 }

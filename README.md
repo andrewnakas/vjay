@@ -521,6 +521,11 @@ so the runtime matches `./serve.sh` exactly. What the shell adds:
 - **The render loop keeps running when the window is not focused**, which a
   background browser tab does not.
 
+On **Linux**, prefer the `.deb` on Debian and Ubuntu. The `.AppImage` needs
+`libfuse2`, which Ubuntu 22.04 and later no longer ship — without it the
+AppImage exits with `dlopen(): error loading libfuse.so.2`. Either
+`sudo apt install libfuse2`, or use the `.deb`.
+
 **Neither build is signed.** There is no Apple or Windows certificate behind
 this, so both will warn the first time:
 
